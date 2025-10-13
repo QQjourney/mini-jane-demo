@@ -1,0 +1,44 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    image: your-dockerhub-user/mini-jane-demo:latest
+    environment:
+      # อ่านค่าจาก .env บนเครื่อง (ไม่ commit)
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - CHROMA_PERSIST_DIR=/app/vectorstore
+      - COLLECTION_NAME=jenosize-ideas
+      - EMBED_MODEL=BAAI/bge-m3
+      - GENERATION_MODEL=${GENERATION_MODEL:-models/gemini-2.5-flash}
+      - APP_ENV=production
+      - START_TARGET=api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./vectorstore:/app/vectorstore
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  ui:
+    image: your-dockerhub-user/mini-jane-demo:latest
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - CHROMA_PERSIST_DIR=/app/vectorstore
+      - COLLECTION_NAME=jenosize-ideas
+      - EMBED_MODEL=BAAI/bge-m3
+      - GENERATION_MODEL=${GENERATION_MODEL:-models/gemini-2.5-flash}
+      - START_TARGET=ui
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./vectorstore:/app/vectorstore
+      - ./data:/app/data
