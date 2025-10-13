@@ -1,0 +1,17 @@
+# venv & cache
+.venv/
+__pycache__/
+*.pyc
+
+# notebooks & tmp
+.ipynb_checkpoints/
+
+# local data & vector DB
+data/raw/
+vectorstore/
+tests/tmp/
+
+# env & secrets
+.env
+.env.*.local
+*.pem

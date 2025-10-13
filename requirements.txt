@@ -1,0 +1,36 @@
+# ========== Core API ==========
+fastapi
+uvicorn[standard]
+pydantic>=2.0
+
+# ========== Data Processing ==========
+requests
+beautifulsoup4
+tqdm
+trafilatura
+lxml
+
+# ========== Embedding & Vector DB ==========
+chromadb>=0.5.5
+sentence-transformers>=2.2.2
+
+# ========== LangChain for RAG pipeline ==========
+langchain>=0.3.0
+langchain-community>=0.3.0
+
+# ========== Utilities ==========
+python-dotenv
+pandas
+numpy
+
+# ========== Frontend ==========
+streamlit
+
+# ========== Notebook & Dev Tools ==========
+ipykernel
+jupyter
+google-generativeai
+# ========== API ==========
+fastapi
+uvicorn[standard]
+pydantic

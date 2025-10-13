@@ -1,0 +1,5 @@
+data/vectorstore/** !text !filter !merge !diff
+notebooks/vectorstore/** !text !filter !merge !diff
+*.bin !text !filter !merge !diff
+*.sqlite3 !text !filter !merge !diff
+* !text !filter !merge !diff

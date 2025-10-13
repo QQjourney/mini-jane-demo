@@ -1,0 +1,4 @@
+Collection: jenosize-ideas
+Model: BAAI/bge-m3
+Persist: D:\mini-jane-demo\notebooks\vectorstore
+Total inserted (this run): 446

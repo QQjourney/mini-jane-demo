@@ -1,0 +1,5 @@
+✅  AI trends for 2030  -> expect_cat=Futurist
+❌  customer service platforms  -> expect_cat=Real-time Marketing
+✅  sustainability in business  -> expect_cat=Utility for Our World
+
+Score: 2/3
