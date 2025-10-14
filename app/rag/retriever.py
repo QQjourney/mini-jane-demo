@@ -16,7 +16,7 @@ from app.rag.embeddings_api import embed_query as _embed_query
 load_dotenv()
 
 # -------- ENV / PATH --------
-CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./vectorstore")
+CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./notebooks/vectorstore")
 COLLECTION_NAME    = os.getenv("COLLECTION_NAME", "jenosize-ideas")
 
 # -------- Singleton clients --------
