@@ -1,46 +1,43 @@
 # syntax=docker/dockerfile:1
 FROM python:3.12-slim
 
+# ----- Env base -----
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DEFAULT_TIMEOUT=1200
+
+# (ออปชัน) cache โหมด huggingface ให้ mount ได้จากภายนอก
+# ENV HF_HOME=/app/.cache/hf
 
 WORKDIR /app
 
-# system deps (lxml, trafilatura บางเวอร์ชันต้องมี)
-RUN apt-get update && apt-get install -y \
-    build-essential curl git libxml2-dev libxslt1-dev \
+# ----- System packages (สำหรับ lxml / trafilatura / build wheels) -----
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential curl git ca-certificates \
+    libxml2-dev libxslt1-dev \
  && rm -rf /var/lib/apt/lists/*
 
-# requirements
+# ----- Python deps -----
+# 1) ติดตั้ง PyTorch (CPU only) ก่อน เพื่อกันไปดึง CUDA ขนาดใหญ่
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
+    torch==2.5.1+cpu torchvision==0.20.1+cpu torchaudio==2.5.1+cpu
+
+# 2) ติดตั้ง deps อื่น ๆ จาก requirements.txt
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# project
+# ----- Project code -----
 COPY app /app/app
 COPY scripts /app/scripts
 COPY notebooks /app/notebooks
 COPY tests /app/tests
 COPY README.md /app/README.md
+# (ไม่ copy .env / vectorstore / data เข้ามาใน image — ให้ mount ผ่าน volumes)
 
-# เลือกโหมดรันด้วยตัวแปร START_TARGET: api | ui
-ENV START_TARGET=api
-ENV PORT_API=8000
-ENV PORT_UI=8501
+# พอร์ตที่มักใช้ (ออปชัน — compose จะ map เอง)
+EXPOSE 8000 8501
 
-# healthcheck ง่ายๆ
-HEALTHCHECK CMD curl -f http://localhost:${PORT_API}/health || exit 1
-
-# entry script
-COPY <<'BASH' /app/start.sh
-#!/usr/bin/env bash
-set -e
-echo "[start] mode=$START_TARGET"
-if [ "$START_TARGET" = "ui" ]; then
-  exec streamlit run app/ui/streamlit_app.py --server.port ${PORT_UI} --server.address 0.0.0.0
-else
-  exec uvicorn app.api.main:app --host 0.0.0.0 --port ${PORT_API}
-fi
-BASH
-RUN chmod +x /app/start.sh
-
-CMD ["/app/start.sh"]
+# ไม่กำหนด CMD ที่นี่ เพราะจะสั่งผ่าน docker-compose:
+# - API: ["python","-m","uvicorn","app.api.main:app","--host","0.0.0.0","--port","8000"]
+# - UI : ["streamlit","run","app/ui/streamlit_app.py","--server.port","8501","--server.address","0.0.0.0"]

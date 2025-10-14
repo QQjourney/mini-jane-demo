@@ -1,3 +1,9 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.5.1+cpu
+torchvision==0.20.1+cpu
+torchaudio==2.5.1+cpu
+
+
 # ========== Core API ==========
 fastapi
 uvicorn[standard]
@@ -15,8 +21,7 @@ chromadb>=0.5.5
 sentence-transformers>=2.2.2
 
 # ========== LangChain for RAG pipeline ==========
-langchain>=0.3.0
-langchain-community>=0.3.0
+
 
 # ========== Utilities ==========
 python-dotenv

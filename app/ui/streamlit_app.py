@@ -1,14 +1,120 @@
-# app/ui/streamlit_app.py
-import sys
+# ===== Auto-reindex on first run (Streamlit Cloud friendly) =====
 from pathlib import Path
-sys.path.append(str(Path(__file__).resolve().parents[2]))
-
-import os
-from typing import Dict, List, Optional
+import os, json, time
 import streamlit as st
 from dotenv import load_dotenv
 
 load_dotenv()
+
+import chromadb
+from chromadb.config import Settings
+from sentence_transformers import SentenceTransformer
+
+
+# --- ENV / PATH ---
+CHROMA_DIR      = Path(os.getenv("CHROMA_PERSIST_DIR", "./vectorstore"))
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "jenosize-ideas")
+CHUNKS_FILE     = Path(os.getenv("CHUNKS_FILE", "./data/processed/chunks.jsonl"))
+EMBED_MODEL     = os.getenv("EMBED_MODEL", "BAAI/bge-m3")
+
+# --- Cache resources: โหลดครั้งเดียวต่อโปรเซส ---
+@st.cache_resource(show_spinner=False)
+def get_embedder():
+    return SentenceTransformer(EMBED_MODEL, device="cpu")  # Streamlit Cloud = CPU
+
+@st.cache_resource(show_spinner=False)
+def get_chroma():
+    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+    client = chromadb.PersistentClient(path=str(CHROMA_DIR), settings=Settings(allow_reset=True))
+    col = client.get_or_create_collection(name=COLLECTION_NAME)
+    return client, col
+
+def _make_id(url: str, chunk_index: int) -> str:
+    # ให้ ID deterministic (กันซ้ำตอนรันใหม่)
+    return f"{url}#chunk{chunk_index}"
+
+def _load_chunks():
+    assert CHUNKS_FILE.exists(), f"Not found: {CHUNKS_FILE}"
+    chunks = []
+    with open(CHUNKS_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            rec = json.loads(line)
+            # ขาด field ไหน ก็เติม default
+            chunks.append({
+                "url": rec.get("url",""),
+                "title": rec.get("title",""),
+                "category": rec.get("category",""),
+                "section": rec.get("section",""),
+                "chunk_index": int(rec.get("chunk_index", 0)),
+                "text": rec.get("text",""),
+                "language": rec.get("language","en"),
+            })
+    return chunks
+
+def ensure_index_ready():
+    """
+    ถ้า collection ยังว่าง หรือ vectorstore ไม่มี ให้ reindex จาก chunks.jsonl อัตโนมัติ
+    ใช้ progress bar ของ Streamlit เพื่อ feedback
+    """
+    client, col = get_chroma()
+
+    try:
+        n = col.count()
+    except Exception:
+        n = 0
+
+    if n and n > 0:
+        st.sidebar.info(f"🔎 Vector index ready: {n} chunks")
+        return
+
+    if not CHUNKS_FILE.exists():
+        st.sidebar.error("❌ Missing chunks.jsonl – cannot build index.")
+        return
+
+    st.sidebar.warning("⚙️ Building vector index (first run). Please wait…")
+    chunks = _load_chunks()
+
+    # dedupe ตาม (url, chunk_index)
+    seen = set()
+    data = []
+    for c in chunks:
+        key = (c["url"], c["chunk_index"])
+        if key in seen:  # กันซ้ำ
+            continue
+        seen.add(key)
+        data.append(c)
+
+    embedder = get_embedder()
+    added = 0
+    pbar = st.sidebar.progress(0, text="Indexing…")
+
+    # batch insert
+    BATCH = 64
+    total = len(data)
+    for i in range(0, total, BATCH):
+        batch = data[i:i+BATCH]
+        ids   = [_make_id(b["url"], b["chunk_index"]) for b in batch]
+        docs  = [b["text"] for b in batch]
+        metas = [{
+            "url": b["url"], "title": b["title"], "category": b["category"],
+            "section": b["section"], "chunk_index": b["chunk_index"], "language": b["language"]
+        } for b in batch]
+
+        embs = embedder.encode(docs, normalize_embeddings=True).tolist()
+        # ใช้ upsert เพื่อ rerun ได้โดยไม่ error
+        col.upsert(ids=ids, documents=docs, embeddings=embs, metadatas=metas)
+        added += len(batch)
+        pbar.progress(min(1.0, added/total), text=f"Indexing… {added}/{total}")
+
+    pbar.empty()
+    st.sidebar.success(f"✅ Index built: {added} chunks")
+    time.sleep(0.3)
+
+# เรียกหนึ่งครั้งตอนโหลดแอป
+ensure_index_ready()
+# ===== End: Auto-reindex =====
 
 # ------- Import our RAG pipeline -------
 from app.rag.pipeline import answer
