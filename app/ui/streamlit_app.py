@@ -1,128 +1,33 @@
-# ===== Auto-reindex on first run (Streamlit Cloud friendly) =====
+# app/ui/streamlit_app.py
+import sys
 from pathlib import Path
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+
 import os, json, time
+from typing import Dict, List, Optional
+
 import streamlit as st
 from dotenv import load_dotenv
-
 load_dotenv()
 
-import chromadb
-from chromadb.config import Settings
-from sentence_transformers import SentenceTransformer
-
-
-# --- ENV / PATH ---
-CHROMA_DIR      = Path(os.getenv("CHROMA_PERSIST_DIR", "./vectorstore"))
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "jenosize-ideas")
-CHUNKS_FILE     = Path(os.getenv("CHUNKS_FILE", "./data/processed/chunks.jsonl"))
-EMBED_MODEL     = os.getenv("EMBED_MODEL", "BAAI/bge-m3")
-
-# --- Cache resources: โหลดครั้งเดียวต่อโปรเซส ---
-@st.cache_resource(show_spinner=False)
-def get_embedder():
-    return SentenceTransformer(EMBED_MODEL, device="cpu")  # Streamlit Cloud = CPU
-
-@st.cache_resource(show_spinner=False)
-def get_chroma():
-    CHROMA_DIR.mkdir(parents=True, exist_ok=True)
-    client = chromadb.PersistentClient(path=str(CHROMA_DIR), settings=Settings(allow_reset=True))
-    col = client.get_or_create_collection(name=COLLECTION_NAME)
-    return client, col
-
-def _make_id(url: str, chunk_index: int) -> str:
-    # ให้ ID deterministic (กันซ้ำตอนรันใหม่)
-    return f"{url}#chunk{chunk_index}"
-
-def _load_chunks():
-    assert CHUNKS_FILE.exists(), f"Not found: {CHUNKS_FILE}"
-    chunks = []
-    with open(CHUNKS_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            if not line.strip():
-                continue
-            rec = json.loads(line)
-            # ขาด field ไหน ก็เติม default
-            chunks.append({
-                "url": rec.get("url",""),
-                "title": rec.get("title",""),
-                "category": rec.get("category",""),
-                "section": rec.get("section",""),
-                "chunk_index": int(rec.get("chunk_index", 0)),
-                "text": rec.get("text",""),
-                "language": rec.get("language","en"),
-            })
-    return chunks
-
-def ensure_index_ready():
-    """
-    ถ้า collection ยังว่าง หรือ vectorstore ไม่มี ให้ reindex จาก chunks.jsonl อัตโนมัติ
-    ใช้ progress bar ของ Streamlit เพื่อ feedback
-    """
-    client, col = get_chroma()
-
-    try:
-        n = col.count()
-    except Exception:
-        n = 0
-
-    if n and n > 0:
-        st.sidebar.info(f"🔎 Vector index ready: {n} chunks")
-        return
-
-    if not CHUNKS_FILE.exists():
-        st.sidebar.error("❌ Missing chunks.jsonl – cannot build index.")
-        return
-
-    st.sidebar.warning("⚙️ Building vector index (first run). Please wait…")
-    chunks = _load_chunks()
-
-    # dedupe ตาม (url, chunk_index)
-    seen = set()
-    data = []
-    for c in chunks:
-        key = (c["url"], c["chunk_index"])
-        if key in seen:  # กันซ้ำ
-            continue
-        seen.add(key)
-        data.append(c)
-
-    embedder = get_embedder()
-    added = 0
-    pbar = st.sidebar.progress(0, text="Indexing…")
-
-    # batch insert
-    BATCH = 64
-    total = len(data)
-    for i in range(0, total, BATCH):
-        batch = data[i:i+BATCH]
-        ids   = [_make_id(b["url"], b["chunk_index"]) for b in batch]
-        docs  = [b["text"] for b in batch]
-        metas = [{
-            "url": b["url"], "title": b["title"], "category": b["category"],
-            "section": b["section"], "chunk_index": b["chunk_index"], "language": b["language"]
-        } for b in batch]
-
-        embs = embedder.encode(docs, normalize_embeddings=True).tolist()
-        # ใช้ upsert เพื่อ rerun ได้โดยไม่ error
-        col.upsert(ids=ids, documents=docs, embeddings=embs, metadatas=metas)
-        added += len(batch)
-        pbar.progress(min(1.0, added/total), text=f"Indexing… {added}/{total}")
-
-    pbar.empty()
-    st.sidebar.success(f"✅ Index built: {added} chunks")
-    time.sleep(0.3)
-
-# เรียกหนึ่งครั้งตอนโหลดแอป
-ensure_index_ready()
-# ===== End: Auto-reindex =====
-
-# ------- Import our RAG pipeline -------
+# ------- RAG imports -------
 from app.rag.pipeline import answer
 from app.rag.retriever import get_collection
+from app.rag.embeddings_api import embed_docs  # ใช้ตอน reindex
 
+# ------- Page config -------
 st.set_page_config(page_title="mini-jane-demo", page_icon="🤖", layout="wide")
 
-# -------- Utilities --------
+# ------- ENV / PATH -------
+CHROMA_PERSIST_DIR = Path(os.getenv("CHROMA_PERSIST_DIR", "./vectorstore"))
+COLLECTION_NAME    = os.getenv("COLLECTION_NAME", "jenosize-ideas")
+CHUNKS_FILE        = Path(os.getenv("CHUNKS_FILE", "./data/processed/chunks.jsonl"))
+GEN_MODEL          = os.getenv("GENERATION_MODEL", "models/gemini-2.5-flash")
+EMBED_MODEL_API    = os.getenv("GEMINI_EMBED_MODEL", "models/text-embedding-004")
+
+# =========================
+# Helpers
+# =========================
 def build_where_from_filters(selected_cats: List[str]) -> Optional[Dict]:
     if not selected_cats:
         return None
@@ -132,32 +37,28 @@ def build_where_from_filters(selected_cats: List[str]) -> Optional[Dict]:
 
 def ensure_session():
     if "messages" not in st.session_state:
-        st.session_state.messages = []  # [{"role":"user"/"assistant","content": "..."}]
+        st.session_state.messages = []  # [{"role": "user"/"assistant", "content": "..."}]
 
 def add_message(role: str, content: str):
     st.session_state.messages.append({"role": role, "content": content})
 
 def get_all_categories(limit: int = 2000) -> List[str]:
-    """Read some docs from Chroma to collect category values."""
+    """อ่าน metadata บางส่วนจาก Chroma เพื่อดึงรายชื่อ category"""
     try:
         col = get_collection()
-        # Prefer .get(limit=...) for portability
         res = col.get(limit=limit)
         metas = res.get("metadatas", []) or []
         cats = {m.get("category", "-") for m in metas if isinstance(m, dict)}
         cats.discard("-")
         items = sorted([c for c in cats if c])
-        # fallback to known buckets if empty
-        if not items:
-            items = [
-                "Futurist",
-                "Understand People & Consumer",
-                "Transformation & Technology",
-                "Utility for Our World",
-                "Real-time Marketing",
-                "Experience the New World",
-            ]
-        return items
+        return items or [
+            "Futurist",
+            "Understand People & Consumer",
+            "Transformation & Technology",
+            "Utility for Our World",
+            "Real-time Marketing",
+            "Experience the New World",
+        ]
     except Exception:
         return [
             "Futurist",
@@ -168,22 +69,139 @@ def get_all_categories(limit: int = 2000) -> List[str]:
             "Experience the New World",
         ]
 
-# -------- Sidebar Controls --------
+# =========================
+# Auto-Index (first run)
+# =========================
+LOCK = CHROMA_PERSIST_DIR / ".building.lock"
+
+def make_id(url: str, chunk_index: int) -> str:
+    return f"{url}#chunk{int(chunk_index)}"
+
+def _load_chunks() -> List[Dict]:
+    assert CHUNKS_FILE.exists(), f"Not found: {CHUNKS_FILE}"
+    out = []
+    with open(CHUNKS_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            r = json.loads(line)
+            out.append({
+                "url": r.get("url",""),
+                "title": r.get("title",""),
+                "category": r.get("category",""),
+                "section": r.get("section",""),
+                "chunk_index": int(r.get("chunk_index", 0)),
+                "text": r.get("text",""),
+                "language": r.get("language","en")
+            })
+    return out
+
+def ensure_index_ready():
+    """ถ้ายังไม่มี index ให้สร้างจาก chunks.jsonl อัตโนมัติ (เหมาะกับ Render/Cloud)"""
+    CHROMA_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
+    col = get_collection()
+
+    try:
+        n = col.count()
+        if n and n > 0:
+            st.sidebar.info(f"🔎 Vector index ready: {n} chunks")
+            return
+    except Exception:
+        pass
+
+    if not CHUNKS_FILE.exists():
+        st.sidebar.error("❌ Missing chunks.jsonl – cannot build index.")
+        return
+
+    # กันชนพร้อมกันหลายคนด้วย lock ง่าย ๆ
+    if LOCK.exists():
+        st.sidebar.info("⏳ Another session is building index…")
+        for _ in range(60):
+            time.sleep(2)
+            try:
+                if col.count() > 0:
+                    st.sidebar.success("✅ Index ready")
+                    return
+            except Exception:
+                pass
+        st.sidebar.error("⚠️ Index still not ready. Please refresh.")
+        return
+
+    try:
+        LOCK.write_text("building", encoding="utf-8")
+        st.sidebar.warning("⚙️ Building vector index (first run). Please wait…")
+
+        raw = _load_chunks()
+        # de-dup (url, chunk_index)
+        seen = set()
+        chunks = []
+        for r in raw:
+            key = (r["url"], r["chunk_index"])
+            if key in seen:
+                continue
+            seen.add(key)
+            chunks.append(r)
+
+        BATCH = 64
+        total, added = len(chunks), 0
+        pbar = st.sidebar.progress(0.0, text="Indexing…")
+
+        for i in range(0, total, BATCH):
+            batch = chunks[i:i+BATCH]
+            ids   = [make_id(b["url"], b["chunk_index"]) for b in batch]
+            docs  = [b["text"] for b in batch]
+            metas = [{
+                "url": b["url"], "title": b["title"], "category": b["category"],
+                "section": b["section"], "chunk_index": b["chunk_index"],
+                "language": b.get("language","en")
+            } for b in batch]
+
+            embs = embed_docs(docs)  # ✅ Gemini Embedding API
+            col.upsert(ids=ids, documents=docs, embeddings=embs, metadatas=metas)
+            added += len(batch)
+            pbar.progress(min(1.0, added/total), text=f"Indexing… {added}/{total}")
+
+        pbar.empty()
+        st.sidebar.success(f"✅ Index built: {added} chunks")
+    finally:
+        if LOCK.exists():
+            LOCK.unlink(missing_ok=True)
+
+# ===== Build UI =====
 st.sidebar.title("⚙️ Settings")
 
-mode = st.sidebar.radio("Mode", options=["📚 RAG", "💬 LLM only"], index=0)
+# ปุ่ม rebuild สำหรับผู้ดูแล (จะลบทั้งคอลเลกชันแล้วสร้างใหม่)
+with st.sidebar.expander("Admin • Maintenance"):
+    if st.button("🧹 Rebuild index (danger)"):
+        try:
+            col = get_collection()
+            # ล้างทั้งคอลเลกชัน
+            from chromadb.config import Settings
+            client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR), settings=Settings(allow_reset=True))
+            client.delete_collection(COLLECTION_NAME)
+            # สร้างใหม่ + สร้างดัชนี
+            get_collection()  # โหลดใหม่
+            ensure_index_ready()
+            st.success("Rebuilt successfully.")
+        except Exception as e:
+            st.error(f"Rebuild failed: {e}")
+
+mode  = st.sidebar.radio("Mode", options=["📚 RAG", "💬 LLM only"], index=0)
 top_k = st.sidebar.slider("Top-K documents", min_value=3, max_value=10, value=5, step=1)
 
+# ทำให้แน่ใจว่ามีดัชนีพร้อมใช้งาน
+ensure_index_ready()
+
 available_cats = get_all_categories()
-selected_cats = st.sidebar.multiselect("Filter by category (optional)", options=available_cats, default=[])
+selected_cats  = st.sidebar.multiselect("Filter by category (optional)", options=available_cats, default=[])
 
 show_debug = st.sidebar.checkbox("Show retriever debug", value=True)
 
 st.sidebar.markdown("---")
-st.sidebar.caption(f"Vector store: `{os.getenv('CHROMA_PERSIST_DIR', './vectorstore')}`")
-st.sidebar.caption(f"Collection : `{os.getenv('COLLECTION_NAME', 'jenosize-ideas')}`")
-st.sidebar.caption(f"Embed model: `{os.getenv('EMBED_MODEL', 'BAAI/bge-m3')}`")
-st.sidebar.caption(f"Gen model  : `{os.getenv('GENERATION_MODEL', 'gemini-1.5-flash')}`")
+st.sidebar.caption(f"Vector store: `{CHROMA_PERSIST_DIR}`")
+st.sidebar.caption(f"Collection : `{COLLECTION_NAME}`")
+st.sidebar.caption(f"Embed (API): `{EMBED_MODEL_API}`")
+st.sidebar.caption(f"Gen model  : `{GEN_MODEL}`")
 st.sidebar.markdown("---")
 st.sidebar.caption("Tip: พิมพ์ได้ทั้งไทย/อังกฤษ ระบบจะตอบตามภาษา")
 
@@ -193,12 +211,12 @@ st.caption("Chat with RAG over Jenosize Ideas (bilingual TH/EN) — with citatio
 
 ensure_session()
 
-# Display history
+# แสดงประวัติแชต
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# Input
+# รับคำถาม
 query = st.chat_input("ถามคำถามได้เลย… (TH/EN)")
 
 if query:
@@ -206,9 +224,7 @@ if query:
     with st.chat_message("user"):
         st.markdown(query)
 
-    # Build filters
     where = build_where_from_filters(selected_cats)
-
     rag_mode = "RAG" if mode.startswith("📚") else "LLM"
 
     with st.chat_message("assistant"):
@@ -226,7 +242,7 @@ if query:
                 for c in res["citations"]:
                     st.markdown(f"- {c}")
 
-        # Retriever debug
+        # Retriever debug table
         if show_debug and res.get("retrieval"):
             import pandas as pd
             rows = []

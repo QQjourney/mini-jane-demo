@@ -1,41 +1,18 @@
---extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.5.1+cpu
-torchvision==0.20.1+cpu
-torchaudio==2.5.1+cpu
-
-
-# ========== Core API ==========
+# --- Web / API ---
 fastapi
 uvicorn[standard]
-pydantic>=2.0
+pydantic
 
-# ========== Data Processing ==========
+# --- Data processing ---
 requests
 beautifulsoup4
 tqdm
 trafilatura
 lxml
-
-# ========== Embedding & Vector DB ==========
-chromadb>=0.5.5
-sentence-transformers>=2.2.2
-
-# ========== LangChain for RAG pipeline ==========
-
-
-# ========== Utilities ==========
 python-dotenv
-pandas
-numpy
 
-# ========== Frontend ==========
-streamlit
+# --- Vector DB ---
+chromadb
 
-# ========== Notebook & Dev Tools ==========
-ipykernel
-jupyter
+# --- LLM / Embedding API ---
 google-generativeai
-# ========== API ==========
-fastapi
-uvicorn[standard]
-pydantic
