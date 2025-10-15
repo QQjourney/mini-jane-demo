@@ -1,317 +1,338 @@
-แน่นมากครับ เดี๋ยวผมจัด README.md เวอร์ชัน “ระดับโปรส่งประกวด” ให้เลย 🎯
-ภาษาเป็นทางการ อ่านลื่น มีภาพ directory + ทุกหัวข้อที่คุณขอ + เพิ่มส่วน badges กับ architecture diagram mock-up เพื่อความสมบูรณ์
+เยี่ยมเลย เดี๋ยวผมสรุปทุกอย่างให้เป็นเอกสารแบบ README เต็ม ๆ ตามที่ขอมานะครับ — ไล่ตั้งแต่ 01→04, อธิบายระบบ/ไฟล์ข้อมูล, เทคนิค RAG+LLM, โมเดลที่ใช้, ประวัติการเปลี่ยน embedding, วิธีรันทั้ง local/ลิงก์, การใช้ UI/API (ตัวอย่าง JSON), และ troubleshooting
+
+````markdown
+# 🤖 mini-jane-demo — RAG + Gemini (Bilingual TH/EN)
+
+ระบบสาธิต **Retrieval-Augmented Generation (RAG)** สำหรับถาม-ตอบ/สรุป/สร้างบทความจากคลังบทความ “Jenosize Ideas”  
+รองรับ **ไทย/อังกฤษ** แบบ end-to-end: ingest → clean → chunk → embed → index → retrieve → generate
+
+- **UI:** Streamlit (chat-style)
+- **API:** FastAPI (Render)
+- **Vector DB:** ChromaDB (persisted)
+- **LLM:** Google Gemini 2.5 Flash
+- **Embedding:** Google `text-embedding-004` (768d)
+
+**Live:**
+- Streamlit UI: https://mini-jane-demo-021512025.streamlit.app/
+- Render API: https://mini-jane-demo.onrender.com
 
 ---
 
-# 🧠 **mini-jane-demo**
-
-**RAG-powered Business Idea Chatbot using Jenosize Articles + Gemini + ChromaDB**
-
----
-
-## 🧩 Overview
-
-`mini-jane-demo` คือโปรเจกต์สาธิตการสร้าง **Retrieval-Augmented Generation (RAG)** chatbot สำหรับสรุปและตอบคำถามด้านธุรกิจ/มาร์เก็ตติ้ง จากบทความของ [Jenosize Ideas](https://www.jenosize.com/en/ideas)
-
-ระบบใช้:
-
-* 🧠 **Google Gemini (2.5-flash)** เป็น LLM สำหรับ reasoning / generation
-* 📚 **ChromaDB** เป็น vector database สำหรับ semantic retrieval
-* 🔎 **Sentence-Transformer (BAAI/bge-m3)** สำหรับ multilingual embedding
-* ⚙️ **FastAPI** สำหรับ API service
-* 💬 **Streamlit** สำหรับ UI chatbot
-
----
-
-## 📁 Directory Structure
+## 0) Directory Structure (โครงสร้างสำคัญ)
 
 ```bash
 mini-jane-demo/
 │
-├── app/
-│   ├── api/                     # FastAPI endpoints
-│   │   ├── main.py              # main app (FastAPI routes)
-│   │   └── schemas.py           # pydantic models (request/response)
-│   │
-│   ├── rag/                     # RAG pipeline modules
-│   │   ├── embeddings.py        # embedding model (BAAI/bge-m3)
-│   │   ├── retriever.py         # search/query from Chroma
-│   │   ├── prompts.py           # prompt builder for Gemini
-│   │   └── pipeline.py          # core RAG + LLM answering
-│   │
-│   └── ui/
-│       └── streamlit_app.py     # chat UI (frontend)
+├─ app/
+│  ├─ api/
+│  │  ├─ main.py            # FastAPI endpoints (/health, /ask, /search, /categories)
+│  │  └─ schemas.py         # Pydantic models (request/response)
+│  ├─ rag/
+│  │  ├─ embeddings.py      # ฟังก์ชันฝังเวกเตอร์ (Gemini text-embedding-004)
+│  │  ├─ retriever.py       # เชื่อม Chroma, ค้นเอกสาร (MMR, filters)
+│  │  ├─ pipeline.py        # RAG pipeline (build prompt + call LLM)
+│  │  ├─ prompts.py         # สร้าง system/user prompt (auto TH/EN)
+│  │  └─ utils.py           # helper: clean/normalize ฯลฯ
+│  └─ ui/
+│     └─ streamlit_app.py   # Chat UI (bilingual, category filter, citations)
 │
-├── data/
-│   ├── raw/                     # scraped raw articles
-│   └── processed/               # cleaned + chunked articles
+├─ notebooks/
+│  ├─ 01_scrape.ipynb       #  เก็บบทความจากเว็บ
+│  ├─ 02_clean.ipynb        #  clean/normalize/sort
+│  ├─ 03_build_vectorstore.ipynb  #  chunk → embed → index (Chroma)
+│  ├─ 04_eval_sanity.ipynb  #  ตรวจคุณภาพ retrieval แบบเร็ว ๆ
+│  └─ vectorstore/          # ✅ ChromaDB persisted (ใช้บน Streamlit/Render)
 │
-├── notebooks/                   # data processing pipelines
-│   ├── 01_scrape_ideas.ipynb    # web scraping (trafilatura)
-│   ├── 02_clean_chunk.ipynb     # cleaning + chunking
-│   ├── 03_embed_index.ipynb     # embedding + indexing to Chroma
-│   └── 04_retrieval_test.ipynb  # retrieval & semantic test
+├─ data/
+│  ├─ raw/                  # ข้อมูลดิบจาก 01 (jsonl)
+│  │  ├─ jenosize_articles.jsonl
+│  │  └─ jenosize_articles_sorted.jsonl
+│  └─ processed/            # ข้อมูลหลัง 02/03
+│     ├─ articles_clean.jsonl
+│     └─ chunks.jsonl       # ✅ input สำหรับสร้าง index (fallback reindex)
 │
-├── scripts/
-│   ├── reindex_from_chunks.py   # reindex vectorstore programmatically
-│   ├── try_rag.py               # test RAG from CLI
-│   └── api_version.py           # check Gemini available models
-│
-├── tests/                       # pytest-based unit tests
-│   ├── test_chunker.py
-│   ├── test_retriever.py
-│   └── test_api.py
-│
-├── vectorstore/                 # persistent ChromaDB
-│
-├── .env                         # environment variables (local, not committed)
-├── .env.example                 # template for configuration
-├── Dockerfile                   # container build
-├── docker-compose.yml            # deploy both API + UI
-├── requirements.txt              # Python dependencies
-├── Makefile                      # shortcut commands
-├── README.md                     # this file
-└── REPORT.pdf                    # project report for submission
-```
+├─ requirements.txt
+├─ .env.example
+├─ .python-version          # ใช้ 3.12.x (เพื่อความเข้ากันได้ของ Chroma)
+└─ README.md
+````
+
+> หมายเหตุ: ในโปรดักชันเราเก็บ `vectorstore/` ไว้ใน repo เพื่อให้ Render ใช้งานได้ทันที (ไม่พึ่ง LFS, ไม่ต้องโหลดโมเดลหนัก)
 
 ---
 
-## ⚙️ System Workflow
+## 1) Data Flow (01 → 04) และตำแหน่งไฟล์
+
+### 🟧 01_scrape.ipynb — Scrape
+
+* **อินพุต**: ลิสต์ URL ของ 6 หมวด (Futurist, Understand People & Consumer, Transformation & Technology, Utility for Our World, Real-time Marketing, Experience the New World)
+* **เทคนิค**: `requests` + retry, `trafilatura` ดึง main text/title, map หมวดจาก path ของ URL, กัน rate-limit
+* **กติกาคุณภาพ**: ทิ้งหน้าที่เนื้อหาน้อย (< ~200 คำ)
+* **ผลลัพธ์**:
+
+  * `data/raw/jenosize_articles.jsonl` (1 บรรทัด = 1 บทความ)
+  * `data/raw/jenosize_articles_sorted.jsonl` (จัดเรียง/เวอร์ชันคงที่)
+
+> *ตัวอย่าง record*:
+
+```json
+{"url":"...","title":"...","text":"...","category":"Futurist","section":"futurist","language":"en"}
+```
+
+### 🟧 02_clean.ipynb — Clean & Normalize
+
+* **อินพุต**: `data/raw/jenosize_articles_sorted.jsonl`
+* **เทคนิค**: ตัดท้าย “Loading…”, normalize whitespace, กรองบทความสั้นมาก (เช่น < 120 คำ), เติมฟิลด์ที่จำเป็น
+* **ผลลัพธ์**:
+
+  * `data/processed/articles_clean.jsonl`  (บทความสะอาด)
+  * (ตรวจสอบรายชื่อ/สถิติโดยรวม)
+
+### 🟧 03_build_vectorstore.ipynb — Chunk + Embed + Index
+
+* **อินพุต**: `articles_clean.jsonl`
+* **เทคนิค**:
+
+  * แบ่งเป็น chunk (ตามย่อหน้า/ความยาวเหมาะสม) พร้อม `chunk_index`
+  * **Embedding**: (เดิม) เคยใช้ local `BAAI/bge-m3` → **เปลี่ยนเป็น** `Gemini text-embedding-004` (768d) เพื่อให้รันบน Render/Streamlit ได้ฟรีและเบา
+  * สร้าง Chroma persistent collection: `jenosize-ideas`
+* **ผลลัพธ์**:
+
+  * `data/processed/chunks.jsonl` (สำรองไว้ reindex ได้)
+  * `notebooks/vectorstore/`  ✅ (ตัวฐาน Chroma ใช้งานจริง)
+
+> *ตัวอย่าง chunk*:
+
+```json
+{"url":"...","title":"...","category":"Futurist","section":"futurist","chunk_index":2,"language":"en","text":"..."}
+```
+
+### 🟧 04_eval_sanity.ipynb — Retrieval sanity check
+
+* ทดสอบ query ตัวอย่าง (TH/EN) → ดู top-K + หมวดที่คืนมา
+* แบบ quick & dirty เพื่อยืนยันว่า index ถูกต้อง, bilingual OK, และ filter ตาม category ใช้ได้
+
+---
+
+## 2) ทำไมเลือก RAG + LLM (ไม่ fine-tune)
+
+* **RAG** เหมาะกับคอลเลกชันบทความที่อัปเดตได้เรื่อย ๆ: เพิ่ม/ลบบทความ → reindex ได้ทันที โดยไม่ต้องเทรนโมเดล
+* **ไม่ต้อง labeling/annotation**: ลดใช้เวลาและงบเทียบกับ fine-tuning
+* **ลด hallucination**: อ้างอิงจากคลังความรู้จริง + แสดง citations ให้ตรวจสอบได้
+* **ปรับสเกลง่าย**: ย้าย vectorstore/เพิ่ม shards/เปลี่ยน retriever ได้ โดยไม่แตะตัว LLM
+
+> ถ้าโจทย์เปลี่ยนเป็น “สไตล์การเขียนเฉพาะแบรนด์” ที่ฝังอยู่ใน model หรือต้องตอบสนอง domain ที่แคบมาก → ค่อยพิจารณา fine-tune ต่อยอด
+
+---
+
+## 3) โมเดลที่ใช้
+
+* **LLM (Generate):** `models/gemini-2.5-flash`
+
+  * เร็ว, คุ้มราคา, รองรับ TH/EN ดี
+* **Embedding (Vector):** `models/text-embedding-004` (768 มิติ)
+
+  * เบา/เสถียรบนโฮสติ้งฟรี
+  * ใช้ร่วมกับ Chroma ได้ดี
+
+> หมายเหตุ: เริ่มต้นเราใช้โมเดล local (`SentenceTransformer: BAAI/bge-m3`) แต่ฟรีโฮสติ้ง (Render/Streamlit Cloud) ไม่เหมาะกับการโหลดโมเดลหนัก ๆ + wheel ของบาง lib ไม่รองรับ CPU/OS → จึงย้ายมาใช้ **Gemini embedding API** และเก็บ **vectorstore** ที่สร้างเสร็จแล้วลง repo เพื่อให้ deploy ได้ทันที
+
+---
+
+## 4) สถาปัตยกรรมโดยรวม (Flow)
 
 ```mermaid
-flowchart TD
-    A[Scrape Jenosize Ideas] --> B[Clean & Chunk Articles]
-    B --> C[Embed with BAAI/bge-m3]
-    C --> D[Store in ChromaDB]
-    D --> E[RAG Pipeline]
-    E --> F1[FastAPI /ask]
-    E --> F2[Streamlit UI]
-    F1 --> G[Gemini API]
-    F2 --> G
-    G --> H[Generated Answers + Citations]
+flowchart LR
+U[User] -- TH/EN query --> S(Streamlit UI)
+S -- POST /ask --> A(FastAPI API)
+A --> R[Retriever (ChromaDB)]
+R --> A
+A --> L[Gemini 2.5 Flash]
+L --> A
+A --> S
+S --> U
+
+subgraph Pipeline
+R -. uses .-> V[(ChromaDB\nnotebooks/vectorstore)]
+A -. embed .-> E[Gemini text-embedding-004]
+end
 ```
-
-**Pipeline Summary:**
-
-| Step                    | File                      | Description                                           |
-| ----------------------- | ------------------------- | ----------------------------------------------------- |
-| 1️⃣ Scraping            | `01_scrape_ideas.ipynb`   | ใช้ `trafilatura` ดึงบทความจาก Jenosize Ideas ทุกหมวด |
-| 2️⃣ Cleaning & Chunking | `02_clean_chunk.ipynb`    | ล้าง HTML / ตัดบทความเป็น chunk (~500 tokens)         |
-| 3️⃣ Embedding           | `03_embed_index.ipynb`    | สร้าง vector ด้วย `BAAI/bge-m3` และเก็บใน Chroma      |
-| 4️⃣ RAG Query           | `app/rag/pipeline.py`     | รวม retrieval + generation                            |
-| 5️⃣ API Layer           | `app/api/main.py`         | FastAPI endpoints `/search`, `/ask`, `/categories`    |
-| 6️⃣ UI Layer            | `app/ui/streamlit_app.py` | Chat UI ผ่าน Streamlit                                |
-| 7️⃣ Deployment          | Docker Compose            | รัน API + UI พร้อมกัน                                 |
 
 ---
 
-## 🧭 Installation
+## 5) ใช้งานแบบ Local
 
-### Option A: Local (Python)
+### 5.1 เตรียมโปรเจกต์
 
 ```bash
-git clone https://github.com/<your-user>/mini-jane-demo.git
+git clone https://github.com/QQjourney/mini-jane-demo.git
 cd mini-jane-demo
 
+# Python 3.12.x
 python -m venv .venv
-.\.venv\Scripts\activate       # (Windows)
+.venv\Scripts\activate     # Windows PowerShell
 pip install -r requirements.txt
-
-# index data if needed
-python -m scripts.reindex_from_chunks
 ```
 
-Run API:
+### 5.2 ตั้งค่า `.env`
+
+```ini
+# ====== API Keys ======
+GEMINI_API_KEY=YOUR_KEY
+
+# ====== Embedding Config ======
+GEMINI_EMBED_MODEL=models/text-embedding-004
+LANG_MODE=multilingual
+CHROMA_PERSIST_DIR=./notebooks/vectorstore
+COLLECTION_NAME=jenosize-ideas
+
+# ====== App Mode ======
+APP_ENV=development
+LOG_LEVEL=INFO
+AUTO_REINDEX=0
+
+# ====== Metadata ======
+PROJECT_NAME=mini-jane-demo
+DATA_PATH=./data
+RAW_PATH=./data/raw
+PROCESSED_PATH=./data/processed
+GENERATION_MODEL=models/gemini-2.5-flash
+```
+
+> ถ้าไม่มี `notebooks/vectorstore/` ให้ตั้ง `AUTO_REINDEX=1` และตรวจว่ามี `data/processed/chunks.jsonl` → ระบบจะสร้าง index ให้เองตอนเริ่ม
+
+### 5.3 รัน UI (Streamlit)
+
+```bash
+streamlit run app/ui/streamlit_app.py
+# เปิด http://localhost:8501
+```
+
+### 5.4 รัน API (FastAPI)
 
 ```bash
 uvicorn app.api.main:app --reload --port 8000
-```
-
-Run UI:
-
-```bash
-streamlit run app/ui/streamlit_app.py
+# Swagger: http://localhost:8000/docs
 ```
 
 ---
 
-### Option B: Docker Compose
+## 6) ใช้งานผ่านลิงก์ (ไม่ต้องติดตั้ง)
 
-```bash
-docker compose build
-docker compose up -d
-```
+* **UI:** [https://mini-jane-demo-021512025.streamlit.app/](https://mini-jane-demo-021512025.streamlit.app/)
+* **API:** [https://mini-jane-demo.onrender.com](https://mini-jane-demo.onrender.com)
 
-* 🌐 API → [http://localhost:8000/docs](http://localhost:8000/docs)
-* 💬 UI → [http://localhost:8501](http://localhost:8501)
+  * `/health` → ตรวจว่ายังขึ้นอยู่ไหม
+  * `/docs` → interactive docs
 
 ---
 
-### Option C: Pull from Docker Hub
+## 7) วิธีใช้ API (ขอตัวอย่าง JSON เท่านั้น)
 
-```bash
-docker pull your-dockerhub-user/mini-jane-demo:latest
+### `POST /ask`
 
-docker run -d --name mini-jane-api -p 8000:8000 \
-  --env-file .env -e START_TARGET=api \
-  -v $(pwd)/vectorstore:/app/vectorstore \
-  -v $(pwd)/data:/app/data your-dockerhub-user/mini-jane-demo:latest
-
-docker run -d --name mini-jane-ui -p 8501:8501 \
-  --env-file .env -e START_TARGET=ui \
-  -v $(pwd)/vectorstore:/app/vectorstore \
-  -v $(pwd)/data:/app/data your-dockerhub-user/mini-jane-demo:latest
-```
-
----
-
-## 💬 Using the Streamlit Chat UI
-
-Run:
-
-```bash
-streamlit run app/ui/streamlit_app.py
-```
-
-### Features
-
-* รองรับ prompt ทั้ง **ภาษาไทย** และ **อังกฤษ**
-* ตอบได้ทั้งจาก:
-
-  * 🔹 LLM ปกติ (Gemini)
-  * 🔹 RAG (ข้อมูลจาก Jenosize Articles)
-* แสดง citation ด้านล่างคำตอบ
-* มี sidebar สำหรับเลือก mode / top-k / clear history
-
----
-
-## 🧪 Using the API
-
-Base URL: `http://localhost:8000`
-
-### `/health`
-
-**GET**
-
-```bash
-curl http://localhost:8000/health
-```
-
-**Response**
-
-```json
-{ "status": "ok" }
-```
-
----
-
-### `/categories`
-
-**GET**
-
-```bash
-curl http://localhost:8000/categories
-```
-
-**Response**
-
-```json
-{ "categories": ["Futurist", "Real-time Marketing", "Utility for Our World", ...] }
-```
-
----
-
-### `/search`
-
-**POST**
-
-```bash
-curl -X POST http://localhost:8000/search \
-  -H "Content-Type: application/json" \
-  -d '{"query":"AI trends for 2030", "k":5}'
-```
-
-**Response**
+**Request JSON**
 
 ```json
 {
-  "results": [
-    {
-      "title": "AI Trends for 2030",
-      "url": "https://www.jenosize.com/en/ideas/futurist/ai-trends-2030",
-      "distance": 0.11,
-      "category": "Futurist"
-    }
-  ]
-}
-```
-
----
-
-### `/ask`
-
-**POST** (RAG mode)
-
-```json
-POST /ask
-{
-  "query": "แนวโน้ม AI สำหรับธุรกิจในปี 2030",
+  "query": "AI trends for 2030",
   "mode": "RAG",
   "k": 5
 }
 ```
 
-**Response**
+**Response JSON (ตัวอย่าง)**
 
 ```json
 {
-  "answer": "AI จะมีบทบาทในทุกภาคธุรกิจโดยเฉพาะด้านการตลาดอัตโนมัติ...",
+  "answer": "AI จะเป็นโครงสร้างพื้นฐานของธุรกิจปี 2030...",
   "citations": [
-    "https://www.jenosize.com/en/ideas/futurist/ai-trends-2030"
+    "AI trends for 2030 — Futurist (Jenosize Ideas)",
+    "Transformation & Technology — Market overview"
+  ],
+  "used_k": 5,
+  "retrieval": [
+    {
+      "text": "…ข้อความ chunk…",
+      "distance": 0.173,
+      "meta": {
+        "url": "https://www.jenosize.com/en/ideas/futurist/…",
+        "title": "AI Trends 2030",
+        "category": "Futurist",
+        "section": "futurist",
+        "chunk_index": 2,
+        "language": "en"
+      }
+    }
   ]
 }
 ```
 
-**LLM only mode**
+### `POST /search`
+
+**Request JSON**
 
 ```json
-POST /ask
+{"query": "consumer behaviour in thailand", "k": 5}
+```
+
+**Response JSON**
+
+```json
 {
-  "query": "สรุปเทรนด์การตลาด 2030",
-  "mode": "LLM"
+  "results": [
+    { "text": "…", "distance": 0.22, "meta": {"category":"Understand People & Consumer", "title":"…"} }
+  ]
+}
+```
+
+### `GET /categories`
+
+**Response JSON**
+
+```json
+{
+  "categories": [
+    "Futurist",
+    "Understand People & Consumer",
+    "Transformation & Technology",
+    "Utility for Our World",
+    "Real-time Marketing",
+    "Experience the New World"
+  ]
 }
 ```
 
 ---
 
-## 🧩 Troubleshooting
+## 8) Troubleshooting
 
-| อาการ                           | สาเหตุ                           | วิธีแก้                                      |
-| ------------------------------- | -------------------------------- | -------------------------------------------- |
-| API Container exited (127)      | ไม่มี bash ใน base image         | ใช้ `/bin/sh` แทนใน `start.sh`               |
-| API Container exited (0)        | start script จบเอง               | ใส่ `exec uvicorn ...` หรือใช้ `command:`    |
-| “GEMINI_API_KEY is not set”     | `.env` ไม่ถูก mount              | ตรวจชื่อไฟล์ `.env` + docker compose env     |
-| “No relevant information found” | ไม่มี index                      | รัน `python scripts/reindex_from_chunks.py`  |
-| Streamlit ขึ้น 404              | UI ยังไม่ connect API            | ตรวจ port และ URL ใน sidebar                 |
-| Slow start (ครั้งแรก)           | โหลดโมเดล `BAAI/bge-m3` ครั้งแรก | ใช้ volume cache `./hf-cache:/app/.cache/hf` |
-
----
-
-## 📜 License
-
-MIT License © 2025 Pattarit Sotyom
+| อาการ                              | สาเหตุ                             | วิธีแก้                                                                            |
+| ---------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------- |
+| `/health` 200 แต่ถามไม่ได้         | vectorstore ไม่ถูกอ่าน             | เช็ก `CHROMA_PERSIST_DIR` และมีไฟล์ใน `notebooks/vectorstore/` จริง                |
+| ตอบว่า “ไม่พบข้อมูล”               | คลังว่าง/collection count=0        | ตั้ง `AUTO_REINDEX=1` และมี `data/processed/chunks.jsonl`, หรือ push `vectorstore` |
+| ล้มตอน start บน Render             | Python 3.13 + chroma rust bindings | ตั้ง `PYTHON_VERSION=3.12.5`, `UVICORN_WORKERS=1`, `WEB_CONCURRENCY=1`             |
+| ไลบรารีโหลดโมเดลฝั่ง local ช้า/ล้ม | ใช้ ST/BGE ใหญ่ไปบนโฮสติ้งฟรี      | ย้ายมาใช้ `text-embedding-004` + เก็บ vectorstore ใน repo                          |
+| หมวดหมู่เรียก filter ไม่ติด        | เมตาดาต้า chunk ไม่มี category     | ย้อนดู 02/03 เติม field ให้ครบก่อน embed/index                                     |
 
 ---
 
-## ✨ Recommended Enhancements
+## 9) License
 
-* ✅ เพิ่ม prompt tuning สำหรับ Gemini
-* ✅ เพิ่ม “auto-summarize” บทความ
-* 🧾 รองรับ PDF ingestion
-* 🔐 เพิ่ม auth key สำหรับ API
-* 🌍 รองรับ multiple sources (Medium, Forbes, ฯลฯ)
+MIT License — ดูไฟล์ `LICENSE`
 
 ---
 
-อยากไหมให้ผมทำ version README.md **พร้อม markdown badges (build, docker, license)** และ **ใส่ภาพ architecture diagram สวย ๆ (png/svg)** เพิ่มให้อีกชุด
-จะได้ดูเหมือน project open-source ตัวเต็มพร้อมส่งประกวดหรือใช้ใน portfolio เลยครับ 🚀
+## 10) Notes / Design Decision
+
+* เลือก **RAG + LLM** เพื่อความคล่องตัว: เพิ่มบทความใหม่ → reindex จบ ไม่ต้องเทรน/label
+* ใช้ **Gemini 2.5 Flash** เป็นตัวตอบ: เร็ว/คุ้ม/รองรับไทยดี
+* ใช้ **Gemini text-embedding-004**: ฝั่ง embed เบาและเสถียรกว่าโหลดโมเดลใหญ่ในฟรีโฮสติ้ง
+* เก็บ **vectorstore** ลง repo: ลดความเสี่ยง runtime ไม่เจอฟイル/โหลดไม่ทัน
+
+```
+
+> ถ้าจะเพิ่มรายชื่อ URL ที่ใช้ใน 01 ให้เติมลงในหัวข้อ 1) ได้เลยครับ (ผมเว้นช่องไว้ตามที่ขอ)  
+> อยากแปะสกรีนช็อต UI/Flow เพิ่มใน README ก็วางใต้หัวข้อ Overview ได้เลย 👍
+::contentReference[oaicite:0]{index=0}
+```

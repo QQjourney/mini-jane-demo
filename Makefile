@@ -17,13 +17,3 @@ api:
 ui:
 	.venv/Scripts/streamlit run app/ui/streamlit_app.py
 
-docker-up:
-	docker compose up -d
-
-docker-down:
-	docker compose down
-
-clean:
-	@echo "🧹 Cleaning..."
-	-rm -rf __pycache__ .pytest_cache vectorstore/* data/processed/* data/raw/* 
-	@echo "✅ Done."
