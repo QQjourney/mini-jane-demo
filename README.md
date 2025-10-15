@@ -138,7 +138,7 @@ mini-jane-demo/
 ---
 
 ## 4) สถาปัตยกรรมโดยรวม (Flow)
-```markdown
+
 
 ```mermaid
 flowchart LR
