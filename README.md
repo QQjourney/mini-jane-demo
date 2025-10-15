@@ -1,6 +1,3 @@
-
-
-````markdown
 # 🤖 mini-jane-demo — RAG + Gemini (Bilingual TH/EN)
 
 ระบบสาธิต **Retrieval-Augmented Generation (RAG)** สำหรับถาม-ตอบ/สรุป/สร้างบทความจากคลังบทความ “Jenosize Ideas”  
@@ -17,6 +14,7 @@
 - Render API: https://mini-jane-demo.onrender.com
 
 ---
+
 
 ## 0) Directory Structure (โครงสร้างสำคัญ)
 
