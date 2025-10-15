@@ -1,4 +1,4 @@
-เยี่ยมเลย เดี๋ยวผมสรุปทุกอย่างให้เป็นเอกสารแบบ README เต็ม ๆ ตามที่ขอมานะครับ — ไล่ตั้งแต่ 01→04, อธิบายระบบ/ไฟล์ข้อมูล, เทคนิค RAG+LLM, โมเดลที่ใช้, ประวัติการเปลี่ยน embedding, วิธีรันทั้ง local/ลิงก์, การใช้ UI/API (ตัวอย่าง JSON), และ troubleshooting
+
 
 ````markdown
 # 🤖 mini-jane-demo — RAG + Gemini (Bilingual TH/EN)
