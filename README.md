@@ -138,6 +138,7 @@ mini-jane-demo/
 ---
 
 ## 4) สถาปัตยกรรมโดยรวม (Flow)
+```markdown
 
 ```mermaid
 flowchart LR
@@ -330,7 +331,5 @@ MIT License — ดูไฟล์ `LICENSE`
 
 ```
 
-> ถ้าจะเพิ่มรายชื่อ URL ที่ใช้ใน 01 ให้เติมลงในหัวข้อ 1) ได้เลยครับ (ผมเว้นช่องไว้ตามที่ขอ)  
-> อยากแปะสกรีนช็อต UI/Flow เพิ่มใน README ก็วางใต้หัวข้อ Overview ได้เลย 👍
-::contentReference[oaicite:0]{index=0}
+
 ```
