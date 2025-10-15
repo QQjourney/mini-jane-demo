@@ -141,20 +141,15 @@ mini-jane-demo/
 
 
 ```mermaid
-flowchart LR
-U[User] -- TH/EN query --> S(Streamlit UI)
-S -- POST /ask --> A(FastAPI API)
-A --> R[Retriever (ChromaDB)]
-R --> A
-A --> L[Gemini 2.5 Flash]
-L --> A
-A --> S
-S --> U
-
-subgraph Pipeline
-R -. uses .-> V[(ChromaDB\nnotebooks/vectorstore)]
-A -. embed .-> E[Gemini text-embedding-004]
-end
+flowchart TD
+    A["Scrape Jenosize Ideas"] --> B["Clean & Chunk Articles"]
+    B --> C["Embed with text-embedding-004"]
+    C --> D["Store in ChromaDB"]
+    D --> E["RAG Pipeline"]
+    E --> F1["FastAPI /ask"] & F2["Streamlit UI"]
+    F1 --> G["Gemini API"]
+    F2 --> G
+    G --> H["Generated Answers + Citations"]
 ```
 
 ---
