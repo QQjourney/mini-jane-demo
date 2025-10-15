@@ -14,6 +14,7 @@ load_dotenv()
 from app.rag.pipeline import answer
 from app.rag.retriever import get_collection
 from app.rag.embeddings_api import embed_docs  # ใช้ตอน reindex
+import chromadb
 
 # ------- Page config -------
 st.set_page_config(page_title="mini-jane-demo", page_icon="🤖", layout="wide")
