@@ -213,7 +213,7 @@ uvicorn app.api.main:app --reload --port 8000
 
 ## 6) ใช้งานผ่านลิงก์ (ไม่ต้องติดตั้ง)
 
-* **UI:** [https://mini-jane-demo-021512025.streamlit.app/](https://mini-jane-demo-021512025.streamlit.app/)
+* **UI:** [https://mini-jane-demo-03.streamlit.app/](https://mini-jane-demo-03.streamlit.app/)
 * **API:** [https://mini-jane-demo.onrender.com](https://mini-jane-demo.onrender.com)
 
   * `/health` → ตรวจว่ายังขึ้นอยู่ไหม
